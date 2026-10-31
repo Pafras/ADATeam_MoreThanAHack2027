@@ -19,9 +19,10 @@ sys.path.insert(0, os.path.join(ROOT, "evaluation"))
 from games import GAME, GAMES, half_video_blocks, source_frames  # noqa: E402
 from possession_metrics import label_codes, read_label_csv, spell_scores, valid_runs, \
     validate_submission  # noqa: E402
-from possession import FPS, WEIGHT_TOUCH, build, detect_touches, tag_scores, tracking_scores, \
-    two_levels, viterbi, write_submission  # noqa: E402
+from possession import FPS, WEIGHT_TOUCH, build, detect_touches, read_features, tag_scores, \
+    tracking_scores, two_levels, viterbi, write_submission  # noqa: E402
 from validate_tags import handover_recall, phase_agreement, restart_agreement  # noqa: E402
+from diagnose_hidden import balanced_agreement  # noqa: E402
 
 N_FRAMES = source_frames("tactical", GAME)
 BLOCKS = half_video_blocks(GAME)
@@ -195,6 +196,26 @@ def test_handover_recall_needs_the_change_to_go_to_the_right_team():
     assert handover_recall(labels, far) == 0.0
 
 
+def test_balanced_agreement_does_not_reward_always_saying_home():
+    reference = np.array([1.0] * 90 + [-1.0] * 10)
+    mask = np.ones(100, dtype=bool)
+    assert balanced_agreement(np.ones(100), reference, mask) == 0.5
+    assert balanced_agreement(reference.copy(), reference, mask) == 1.0
+    assert balanced_agreement(-reference, reference, mask) == 0.0
+
+
+def test_read_features_gives_each_team_its_shape_in_metres():
+    with tempfile.TemporaryDirectory() as folder:
+        path = os.path.join(folder, "atd.txt")
+        with open(path, "w") as handle:
+            handle.write("1:0.0,0.0,1;0.5,0.0,1;0.25,0.5,1;NaN,NaN,NaN:0.5,0.5,1\n")
+        features = read_features(path, np.array([0, 0, 1, 1]), 2, (100.0, 50.0))
+    assert features["home_x"][0] == 25.0 and features["home_y"][0] == 0.0
+    assert features["home_spread"][0] == 25.0
+    assert features["away_x"][0] == 25.0 and features["away_spread"][0] == 0.0
+    assert np.isnan(features["home_x"][1])
+
+
 def test_slow_players_need_the_ball_to_agree_before_it_counts_as_dead():
     n_frames = 3000
     moving_ball = np.arange(n_frames) * 0.2  # 5 m/s, too slow for "in flight", not "still" either
@@ -242,6 +263,8 @@ def test_tag_agreement_counts_the_right_team_and_the_restart():
 
 
 if __name__ == '__main__':
+    test_balanced_agreement_does_not_reward_always_saying_home()
+    test_read_features_gives_each_team_its_shape_in_metres()
     test_a_touch_is_a_sharp_change_next_to_a_clearly_nearer_team()
     test_three_touches_take_possession_and_two_do_not()
     test_handover_recall_needs_the_change_to_go_to_the_right_team()

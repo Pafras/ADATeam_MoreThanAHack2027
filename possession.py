@@ -92,10 +92,11 @@ DEFENDING_CODES = {"defending in attacking third", "defending in middle third",
 
 
 def read_features(raw_path, team_of_track, n_frames, pitch):
-    """Per-frame arrays from the raw ATD: ball position, nearest player per team, mean speed."""
+    """Per-frame arrays from the raw ATD: ball, nearest player per team, mean speed, team shape."""
     length, width = pitch
     features = {name: np.full(n_frames, np.nan)
-                for name in ("ball_x", "ball_y", "near_home", "near_away", "activity")}
+                for name in ("ball_x", "ball_y", "near_home", "near_away", "activity",
+                             "home_x", "home_y", "home_spread", "away_x", "away_y", "away_spread")}
 
     with open(raw_path) as handle:
         for line in handle:
@@ -108,6 +109,7 @@ def read_features(raw_path, team_of_track, n_frames, pitch):
 
             near = [np.inf, np.inf]
             speed_sum, speed_count = 0.0, 0
+            shape = [[0, 0.0, 0.0, 0.0, 0.0], [0, 0.0, 0.0, 0.0, 0.0]]  # n, x, y, x^2, y^2
             for slot, group in enumerate(parts[1].split(";")):
                 x, y, speed = (float(value) for value in group.split(","))
                 if x != x:
@@ -115,11 +117,28 @@ def read_features(raw_path, team_of_track, n_frames, pitch):
                 if speed == speed:
                     speed_sum += speed
                     speed_count += 1
+                team = team_of_track[slot]
                 if ball_x == ball_x:
                     distance = (x * length - ball_x) ** 2 + (y * width - ball_y) ** 2
-                    team = team_of_track[slot]
                     if distance < near[team]:
                         near[team] = distance
+                metres_x, metres_y = x * length, y * width
+                totals = shape[team]
+                totals[0] += 1
+                totals[1] += metres_x
+                totals[2] += metres_y
+                totals[3] += metres_x * metres_x
+                totals[4] += metres_y * metres_y
+
+            for side, name in ((H, "home"), (A, "away")):
+                count, sum_x, sum_y, sum_xx, sum_yy = shape[side]
+                if count:
+                    mean_x, mean_y = sum_x / count, sum_y / count
+                    features[name + "_x"][frame] = mean_x
+                    features[name + "_y"][frame] = mean_y
+                    features[name + "_spread"][frame] = max(
+                        sum_xx / count - mean_x * mean_x + sum_yy / count - mean_y * mean_y,
+                        0.0) ** 0.5
 
             features["ball_x"][frame] = ball_x
             features["ball_y"][frame] = ball_y

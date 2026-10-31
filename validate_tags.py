@@ -142,7 +142,7 @@ def row(name, labels, events, blocks):
                                handover)
 
 
-def report(tracking, events, blocks, baseline_paths=(), no_touches=None):
+def report(tracking, events, blocks, baseline_paths=()):
     """Every printable row: baselines, the settings grid on tracking alone, then with tags."""
     print("{:<36} {:>5} {:>6} {:>6} {:>6} {:>10} {:>9} {:>7} {:>7} {:>9}".format(
         "version", "poss", "dur", "dead", "phase", "phase_dead", "rs_recall", "rs_prec", "rs_team",
@@ -168,21 +168,11 @@ def report(tracking, events, blocks, baseline_paths=(), no_touches=None):
     combined = tracking + tag_scores(events, len(tracking), blocks)
     print(row("current with tags (biased)", label_halves(combined, blocks), events, blocks))
 
-    if no_touches is not None:
-        print(row("no touches, tracking only", label_halves(no_touches, blocks), events, blocks))
-        combined = no_touches + tag_scores(events, len(tracking), blocks)
-        print(row("no touches, with tags (biased)", label_halves(combined, blocks), events, blocks))
-
 
 if __name__ == '__main__':
     match = build_features()
     touch_frames, touch_teams = detect_touches(match)
     print("touches: {} ({} H, {} A)".format(len(touch_frames), int((touch_teams == H).sum()),
                                             int((touch_teams == A).sum())))
-    with_touches = scores_from_features(match)
-    weight, possession.WEIGHT_TOUCH = possession.WEIGHT_TOUCH, 0.0
-    without_touches = scores_from_features(match)
-    possession.WEIGHT_TOUCH = weight
-    report(with_touches, load_tags(GAME), half_video_blocks(GAME),
-           sorted(glob.glob(os.path.join(ROOT, "evaluation", "results", "baseline_*.csv"))),
-           without_touches)
+    report(scores_from_features(match), load_tags(GAME), half_video_blocks(GAME),
+           sorted(glob.glob(os.path.join(ROOT, "evaluation", "results", "baseline_*.csv"))))
