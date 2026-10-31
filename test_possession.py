@@ -20,6 +20,7 @@ from games import GAME, GAMES, half_video_blocks, source_frames  # noqa: E402
 from possession_metrics import label_codes, read_label_csv, spell_scores, valid_runs, \
     validate_submission  # noqa: E402
 from possession import FPS, build, tag_scores, two_levels, viterbi, write_submission  # noqa: E402
+from validate_tags import phase_agreement, restart_agreement  # noqa: E402
 
 N_FRAMES = source_frames("tactical", GAME)
 BLOCKS = half_video_blocks(GAME)
@@ -143,7 +144,25 @@ def test_a_three_second_hold_changes_possession():
     assert (path[500:575] == 1).all() and path[0] == 0 and path[-1] == 0
 
 
+def test_tag_agreement_counts_the_right_team_and_the_restart():
+    labels = np.array(["D"] * 100 + ["H"] * 100 + ["A"] * 100)
+    events = [{"code": "BUILD UP", "start_frame": 100, "end_frame": 200,
+               "tags": {"Team": "Barcelona"}},
+              {"code": "DEFENDING IN MIDDLE THIRD", "start_frame": 200, "end_frame": 300,
+               "tags": {"Team": "Barcelona"}},
+              {"code": "PROGRESSION", "start_frame": 200, "end_frame": 300,
+               "tags": {"Team": "Barcelona"}},
+              {"code": "SET PIECES", "start_frame": 95, "end_frame": 105,
+               "tags": {"Team": "Barcelona"}}]
+    phase, phase_dead = phase_agreement(labels, events)
+    assert abs(phase - 2 / 3.0) < 1e-9 and phase_dead == 0.0
+    assert restart_agreement(labels, events) == (1.0, 1.0, 1.0)
+    events[-1]["tags"]["Team"] = "Atletic Club"
+    assert restart_agreement(labels, events)[2] == 0.0
+
+
 if __name__ == '__main__':
+    test_tag_agreement_counts_the_right_team_and_the_restart()
     test_two_levels_finds_stopped_play_whatever_its_share()
     test_a_three_second_hold_changes_possession()
     test_viterbi_ignores_a_short_touch_and_keeps_a_real_change()

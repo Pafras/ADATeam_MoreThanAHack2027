@@ -265,26 +265,39 @@ def viterbi(scores):
     return path
 
 
-def build(game=GAME, data_dir=None):
-    """The full-length label array. X outside the two halves, H/A/D inside them."""
-    meta_path, raw_path = require(["atd_meta", "atd_raw"], game, data_dir)
-    require(["smart_tagging"], game, data_dir)
-    n_frames = source_frames("tactical", game)
-    pitch = GAMES[game]["pitch"]
-    blocks = half_video_blocks(game)
-
+def graded_mask(n_frames, blocks):
+    """True on the frames inside the two halves."""
     graded = np.zeros(n_frames, dtype=bool)
     for _, first, last in blocks:
         graded[first:last + 1] = True
+    return graded
 
-    features = read_features(raw_path, team_of_each_track(meta_path), n_frames, pitch)
-    scores = (tracking_scores(features, graded, pitch)
-              + tag_scores(load_tags(game, data_dir), n_frames, blocks))
 
-    labels = np.full(n_frames, "X", dtype="<U1")
+def label_halves(scores, blocks):
+    """The full-length label array. X outside the two halves, H/A/D inside them."""
+    labels = np.full(len(scores), "X", dtype="<U1")
     for _, first, last in blocks:
         labels[first:last + 1] = LABELS[viterbi(scores[first:last + 1])]
     return labels
+
+
+def build_tracking_scores(game=GAME, data_dir=None):
+    """Tracking scores for a whole match, the expensive step, with no Smart Tagging in them."""
+    meta_path, raw_path = require(["atd_meta", "atd_raw"], game, data_dir)
+    n_frames = source_frames("tactical", game)
+    pitch = GAMES[game]["pitch"]
+    features = read_features(raw_path, team_of_each_track(meta_path), n_frames, pitch)
+    return tracking_scores(features, graded_mask(n_frames, half_video_blocks(game)), pitch)
+
+
+def build(game=GAME, data_dir=None):
+    """The full-length label array from tracking and Smart Tagging together."""
+    require(["smart_tagging"], game, data_dir)
+    n_frames = source_frames("tactical", game)
+    blocks = half_video_blocks(game)
+    scores = (build_tracking_scores(game, data_dir)
+              + tag_scores(load_tags(game, data_dir), n_frames, blocks))
+    return label_halves(scores, blocks)
 
 
 def summary(labels, game=GAME):
