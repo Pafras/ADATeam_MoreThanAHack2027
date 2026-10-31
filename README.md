@@ -10,6 +10,52 @@ question to answer with it.
 
 ---
 
+## Our submission
+
+This repository is the organisers' starter repository plus our pipeline. Everything below this
+section is theirs. The method, the possession rules and the limitations are in
+[TECHNICAL_DOCUMENT.md](TECHNICAL_DOCUMENT.md).
+
+Requires Python 3.9. The match data is not in this repository. Put these three files from the
+organisers' bundle in `data/tactical/`:
+
+```
+BAR-ATH_tactical_atd.txt
+BAR-ATH_tactical_atd.xml
+BAR-ATH_tactical_smart_tagging.xml
+```
+
+Install the pinned dependencies:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-lock.txt
+```
+
+Regenerate the submission, replacing `<team_name>` with the team's registered name:
+
+```bash
+.venv/bin/python possession.py --out evaluation/results/<team_name>.csv
+```
+
+Validate it and score it on the public five minutes:
+
+```bash
+.venv/bin/python evaluation/validate_submission.py evaluation/results/<team_name>.csv
+.venv/bin/python evaluation/run_evaluation.py
+```
+
+| File | What it does |
+|---|---|
+| `possession.py` | the pipeline; writes the submission |
+| `test_possession.py` | checks on a synthetic match; needs no data |
+| `validate_tags.py` | compares settings over the full match against Smart Tagging |
+| `diagnose_touches.py` | the tracking distributions behind the touch thresholds |
+| `diagnose_hidden.py` | measures team shape signals for frames with no ball |
+| `requirements-lock.txt` | the exact dependency versions |
+
+---
+
 ## The task
 
 **For every frame of the match, say who has the ball.**
