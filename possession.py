@@ -47,6 +47,21 @@ CONTROL_DISTANCE = 2.0  # metres; evidence decays with the nearest player's dist
 NO_PLAYER_DISTANCE = 100.0  # metres, standing in for a team with no tracked player on a frame
 WEIGHT_BALL = 0.5
 
+# Touches: the ball's velocity changes sharply next to a player
+# The ball track is smooth, so a kick is spread over several frames: over 3 frames the velocity
+# change only reaches 4.2 m/s at its 99th percentile, over 8 frames 10.8 m/s. These come from that
+# distribution in the tracking (diagnose_touches.py), not from any labels, and give about 1400
+# touches on the 59% of frames with a ball, in line with a match's passes and receptions.
+TOUCH_LAG = 8  # frames either side of the touch that each velocity is measured over
+TOUCH_CHANGE = 4.0  # m/s of velocity change; below this it could be tracker jitter
+TOUCH_RANGE = 4.0  # metres from the ball to the nearest player, allowing for the smoothing
+TOUCH_MARGIN = 1.0  # metres; a closer call than this between the teams names nobody
+TOUCH_GAP = 10  # frames; changes closer together than this are one touch
+# CHALLENGE.md names "a team completes more than two consecutive passes" as a proxy for control.
+# A spell needs 2 * SWITCH_TEAM = 16 of H-A gap and each touch adds 2 * 3 = 6, so three touches in a
+# row take possession and one or two do not.
+WEIGHT_TOUCH = 3.0
+
 # Dead-ball evidence
 ACTIVITY_WINDOW = 50  # half-width in frames of the smoothing over mean player speed
 GAP_FULL = 10 * FPS  # a ball missing for this many frames counts as fully suspicious
@@ -126,6 +141,35 @@ def ball_speed(ball_x, ball_y):
     return speed
 
 
+def detect_touches(features):
+    """(frames, teams) of ball touches: a sharp change of velocity with one team clearly nearest."""
+    ball_x, ball_y = features["ball_x"], features["ball_y"]
+    velocity_x = (ball_x[TOUCH_LAG:] - ball_x[:-TOUCH_LAG]) * FPS / TOUCH_LAG
+    velocity_y = (ball_y[TOUCH_LAG:] - ball_y[:-TOUCH_LAG]) * FPS / TOUCH_LAG
+    with np.errstate(invalid="ignore"):
+        jumped = np.hypot(velocity_x, velocity_y) > BALL_MAX_SPEED
+        velocity_x[jumped] = np.nan
+
+        change = np.full(len(ball_x), np.nan)
+        change[TOUCH_LAG:-TOUCH_LAG] = np.hypot(velocity_x[TOUCH_LAG:] - velocity_x[:-TOUCH_LAG],
+                                                velocity_y[TOUCH_LAG:] - velocity_y[:-TOUCH_LAG])
+        near = np.minimum(features["near_home"], features["near_away"])
+        margin = features["near_away"] - features["near_home"]
+        candidates = np.flatnonzero((change > TOUCH_CHANGE) & (near < TOUCH_RANGE)
+                                    & (np.abs(margin) >= TOUCH_MARGIN))
+
+    # Keep the sharpest frame of each run of candidates.
+    frames = []
+    for frame in candidates:
+        if frames and frame - frames[-1] <= TOUCH_GAP:
+            if change[frame] > change[frames[-1]]:
+                frames[-1] = frame
+        else:
+            frames.append(frame)
+    frames = np.array(frames, dtype=np.int64)
+    return frames, np.where(margin[frames] > 0, H, A)
+
+
 def missing_run_lengths(missing):
     """For each frame, the length of the run of missing frames it belongs to. 0 where present."""
     lengths = np.zeros(len(missing), dtype=np.int64)
@@ -190,6 +234,11 @@ def tracking_scores(features, graded, pitch):
     team[out] = 0.0
     scores[:, H] += team
     scores[:, A] -= team
+
+    frames, teams = detect_touches(features)
+    touch = WEIGHT_TOUCH * np.where(teams == H, 1.0, -1.0)
+    scores[frames, H] += touch
+    scores[frames, A] -= touch
 
     # Dead: players slowing down, relative to this match's own stopped and live levels, so that
     # no absolute speed has to be assumed. Slow players alone are not a stoppage, because a team
@@ -289,13 +338,25 @@ def label_halves(scores, blocks):
     return labels
 
 
-def build_tracking_scores(game=GAME, data_dir=None):
-    """Tracking scores for a whole match, the expensive step, with no Smart Tagging in them."""
+def build_features(game=GAME, data_dir=None):
+    """Per-frame features for a whole match, the expensive step."""
     meta_path, raw_path = require(["atd_meta", "atd_raw"], game, data_dir)
-    n_frames = source_frames("tactical", game)
-    pitch = GAMES[game]["pitch"]
-    features = read_features(raw_path, team_of_each_track(meta_path), n_frames, pitch)
-    return tracking_scores(features, graded_mask(n_frames, half_video_blocks(game)), pitch)
+    return read_features(raw_path, team_of_each_track(meta_path),
+                         source_frames("tactical", game), GAMES[game]["pitch"])
+
+
+def scores_from_features(features, game=GAME):
+    """Tracking scores for a whole match, with no Smart Tagging in them."""
+    graded = graded_mask(source_frames("tactical", game), half_video_blocks(game))
+    return tracking_scores(features, graded, GAMES[game]["pitch"])
+
+
+def build_tracking_scores(game=GAME, data_dir=None):
+    features = build_features(game, data_dir)
+    frames, teams = detect_touches(features)
+    print("touches: {} ({} H, {} A)".format(len(frames), int((teams == H).sum()),
+                                            int((teams == A).sum())))
+    return scores_from_features(features, game)
 
 
 def build(game=GAME, data_dir=None):

@@ -19,6 +19,8 @@ Columns:
   rs_prec       share of predicted restarts with a tagged set piece nearby; tags are known to miss
                 some restarts, so this reads low even for a perfect system
   rs_team       share of matched restarts handed to the tagged team
+  ho_recall     share of tagged transitions with a change of possession to the right team nearby;
+                flicker inflates it, so read it next to poss
 """
 
 import glob
@@ -31,8 +33,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "evaluation"))
 import possession  # noqa: E402
 from possession import ATTACKING_CODES, DEFENDING_CODES, FPS, GAME, H, A, TAG_TEAMS, \
-    graded_mask, half_video_blocks, label_halves, load_tags, build_tracking_scores, \
-    tag_scores  # noqa: E402
+    build_features, detect_touches, graded_mask, half_video_blocks, label_halves, load_tags, \
+    scores_from_features, tag_scores  # noqa: E402
 from possession_metrics import read_label_csv  # noqa: E402
 
 # Params
@@ -96,6 +98,28 @@ def restart_agreement(labels, events):
             team_hits / float(max(team_total, 1)))
 
 
+def handover_recall(labels, events):
+    """Share of tagged transitions with a change of possession to the expected team nearby.
+
+    A change is measured between consecutive alive frames, so one that passes through a short D
+    still counts. An Attacking Transition follows a recovery by the tagged team, a Defensive
+    Transition follows a loss by it.
+    """
+    alive = np.flatnonzero(np.isin(labels, ["H", "A"]))
+    changed = alive[1:][labels[alive[1:]] != labels[alive[:-1]]]
+
+    hits, total = 0, 0
+    for event in events:
+        team, code = tag_team(event), tag_code(event)
+        if team is None or code not in ("attacking transition", "defensive transition"):
+            continue
+        expected = team if code == "attacking transition" else 1 - team
+        near = changed[np.abs(changed - event["start_frame"]) <= RESTART_TOLERANCE]
+        total += 1
+        hits += (labels[near] == TEAM_LETTERS[expected]).any()
+    return hits / float(max(total, 1))
+
+
 def shape(labels, blocks):
     """(possessions, mean seconds, share of graded frames that are D)."""
     count, frames = 0, 0
@@ -112,14 +136,17 @@ def row(name, labels, events, blocks):
     poss, dur, dead = shape(labels, blocks)
     phase, phase_dead = phase_agreement(labels, events)
     recall, precision, team = restart_agreement(labels, events)
-    return "{:<36} {:>5} {:>6.1f} {:>6.3f} {:>6.3f} {:>10.3f} {:>9.3f} {:>7.3f} {:>7.3f}".format(
-        name, poss, dur, dead, phase, phase_dead, recall, precision, team)
+    handover = handover_recall(labels, events)
+    return ("{:<36} {:>5} {:>6.1f} {:>6.3f} {:>6.3f} {:>10.3f} {:>9.3f} {:>7.3f} {:>7.3f} "
+            "{:>9.3f}").format(name, poss, dur, dead, phase, phase_dead, recall, precision, team,
+                               handover)
 
 
-def report(tracking, events, blocks, baseline_paths=()):
-    """Every printable row: baselines, then the settings grid on tracking alone, then with tags."""
-    print("{:<36} {:>5} {:>6} {:>6} {:>6} {:>10} {:>9} {:>7} {:>7}".format(
-        "version", "poss", "dur", "dead", "phase", "phase_dead", "rs_recall", "rs_prec", "rs_team"))
+def report(tracking, events, blocks, baseline_paths=(), no_touches=None):
+    """Every printable row: baselines, the settings grid on tracking alone, then with tags."""
+    print("{:<36} {:>5} {:>6} {:>6} {:>6} {:>10} {:>9} {:>7} {:>7} {:>9}".format(
+        "version", "poss", "dur", "dead", "phase", "phase_dead", "rs_recall", "rs_prec", "rs_team",
+        "ho_recall"))
 
     graded = graded_mask(len(tracking), blocks)
     for path in baseline_paths:
@@ -141,7 +168,21 @@ def report(tracking, events, blocks, baseline_paths=()):
     combined = tracking + tag_scores(events, len(tracking), blocks)
     print(row("current with tags (biased)", label_halves(combined, blocks), events, blocks))
 
+    if no_touches is not None:
+        print(row("no touches, tracking only", label_halves(no_touches, blocks), events, blocks))
+        combined = no_touches + tag_scores(events, len(tracking), blocks)
+        print(row("no touches, with tags (biased)", label_halves(combined, blocks), events, blocks))
+
 
 if __name__ == '__main__':
-    report(build_tracking_scores(), load_tags(GAME), half_video_blocks(GAME),
-           sorted(glob.glob(os.path.join(ROOT, "evaluation", "results", "baseline_*.csv"))))
+    match = build_features()
+    touch_frames, touch_teams = detect_touches(match)
+    print("touches: {} ({} H, {} A)".format(len(touch_frames), int((touch_teams == H).sum()),
+                                            int((touch_teams == A).sum())))
+    with_touches = scores_from_features(match)
+    weight, possession.WEIGHT_TOUCH = possession.WEIGHT_TOUCH, 0.0
+    without_touches = scores_from_features(match)
+    possession.WEIGHT_TOUCH = weight
+    report(with_touches, load_tags(GAME), half_video_blocks(GAME),
+           sorted(glob.glob(os.path.join(ROOT, "evaluation", "results", "baseline_*.csv"))),
+           without_touches)

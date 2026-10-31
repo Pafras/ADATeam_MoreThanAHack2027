@@ -19,9 +19,9 @@ sys.path.insert(0, os.path.join(ROOT, "evaluation"))
 from games import GAME, GAMES, half_video_blocks, source_frames  # noqa: E402
 from possession_metrics import label_codes, read_label_csv, spell_scores, valid_runs, \
     validate_submission  # noqa: E402
-from possession import FPS, build, tag_scores, tracking_scores, two_levels, viterbi, \
-    write_submission  # noqa: E402
-from validate_tags import phase_agreement, restart_agreement  # noqa: E402
+from possession import FPS, WEIGHT_TOUCH, build, detect_touches, tag_scores, tracking_scores, \
+    two_levels, viterbi, write_submission  # noqa: E402
+from validate_tags import handover_recall, phase_agreement, restart_agreement  # noqa: E402
 
 N_FRAMES = source_frames("tactical", GAME)
 BLOCKS = half_video_blocks(GAME)
@@ -145,6 +145,56 @@ def test_a_three_second_hold_changes_possession():
     assert (path[500:575] == 1).all() and path[0] == 0 and path[-1] == 0
 
 
+def touch_features(near_home, near_away):
+    """A ball moving at 10 m/s along x that reverses at frame 100."""
+    ball_x = np.concatenate((np.arange(101) * 0.4, 40.0 - np.arange(1, 100) * 0.4))
+    n_frames = len(ball_x)
+    return {"ball_x": ball_x, "ball_y": np.full(n_frames, 34.0),
+            "near_home": np.full(n_frames, near_home), "near_away": np.full(n_frames, near_away)}
+
+
+def test_a_touch_is_a_sharp_change_next_to_a_clearly_nearer_team():
+    frames, teams = detect_touches(touch_features(8.0, 1.0))
+    assert list(frames) == [100] and list(teams) == [1], (frames, teams)
+    assert len(detect_touches(touch_features(1.0, 8.0))[0]) == 1
+    assert list(detect_touches(touch_features(1.0, 8.0))[1]) == [0]
+    assert len(detect_touches(touch_features(5.0, 8.0))[0]) == 0  # nobody close enough
+    assert len(detect_touches(touch_features(1.0, 1.5))[0]) == 0  # too close to call
+
+    straight = touch_features(8.0, 1.0)
+    straight["ball_x"] = np.arange(len(straight["ball_x"])) * 0.4
+    assert len(detect_touches(straight)[0]) == 0
+
+
+def test_three_touches_take_possession_and_two_do_not():
+    def path_with_touches(count):
+        scores = np.zeros((1000, 3))
+        scores[0, 0] = scores[-1, 0] = 50.0  # H at both ends
+        for frame in range(400, 400 + 25 * count, 25):
+            scores[frame, 0] -= WEIGHT_TOUCH
+            scores[frame, 1] += WEIGHT_TOUCH
+        return viterbi(scores)
+
+    assert (path_with_touches(2) == 0).all()
+    assert 1 in path_with_touches(3)
+
+
+def test_handover_recall_needs_the_change_to_go_to_the_right_team():
+    labels = np.array(["H"] * 500 + ["A"] * 500)
+    recovered = [{"code": "ATTACKING TRANSITION", "start_frame": 510, "end_frame": 600,
+                  "tags": {"Team": "Atletic Club"}}]
+    lost = [{"code": "DEFENSIVE TRANSITION", "start_frame": 510, "end_frame": 600,
+             "tags": {"Team": "Barcelona"}}]
+    wrong = [{"code": "ATTACKING TRANSITION", "start_frame": 510, "end_frame": 600,
+              "tags": {"Team": "Barcelona"}}]
+    far = [{"code": "ATTACKING TRANSITION", "start_frame": 900, "end_frame": 950,
+            "tags": {"Team": "Atletic Club"}}]
+    assert handover_recall(labels, recovered) == 1.0
+    assert handover_recall(labels, lost) == 1.0
+    assert handover_recall(labels, wrong) == 0.0
+    assert handover_recall(labels, far) == 0.0
+
+
 def test_slow_players_need_the_ball_to_agree_before_it_counts_as_dead():
     n_frames = 3000
     moving_ball = np.arange(n_frames) * 0.2  # 5 m/s, too slow for "in flight", not "still" either
@@ -192,6 +242,9 @@ def test_tag_agreement_counts_the_right_team_and_the_restart():
 
 
 if __name__ == '__main__':
+    test_a_touch_is_a_sharp_change_next_to_a_clearly_nearer_team()
+    test_three_touches_take_possession_and_two_do_not()
+    test_handover_recall_needs_the_change_to_go_to_the_right_team()
     test_slow_players_need_the_ball_to_agree_before_it_counts_as_dead()
     test_only_kickoffs_get_dead_evidence_from_a_set_piece()
     test_tag_agreement_counts_the_right_team_and_the_restart()
