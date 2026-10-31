@@ -19,7 +19,8 @@ sys.path.insert(0, os.path.join(ROOT, "evaluation"))
 from games import GAME, GAMES, half_video_blocks, source_frames  # noqa: E402
 from possession_metrics import label_codes, read_label_csv, spell_scores, valid_runs, \
     validate_submission  # noqa: E402
-from possession import FPS, build, tag_scores, two_levels, viterbi, write_submission  # noqa: E402
+from possession import FPS, build, tag_scores, tracking_scores, two_levels, viterbi, \
+    write_submission  # noqa: E402
 from validate_tags import phase_agreement, restart_agreement  # noqa: E402
 
 N_FRAMES = source_frames("tactical", GAME)
@@ -144,6 +145,35 @@ def test_a_three_second_hold_changes_possession():
     assert (path[500:575] == 1).all() and path[0] == 0 and path[-1] == 0
 
 
+def test_slow_players_need_the_ball_to_agree_before_it_counts_as_dead():
+    n_frames = 3000
+    moving_ball = np.arange(n_frames) * 0.2  # 5 m/s, too slow for "in flight", not "still" either
+    features = {"ball_x": moving_ball % 100.0, "ball_y": np.full(n_frames, 34.0),
+                "near_home": np.full(n_frames, 1.0), "near_away": np.full(n_frames, 8.0),
+                "activity": np.full(n_frames, 2.5)}
+    features["activity"][1000:2000] = 0.5  # the whole team walks, the ball keeps moving
+    graded = np.ones(n_frames, dtype=bool)
+    pitch = GAMES[GAME]["pitch"]
+
+    walking = tracking_scores(features, graded, pitch)
+    assert walking[1200:1800, 2].max() < 0.01, walking[1200:1800, 2].max()
+
+    features["ball_x"] = features["ball_x"].copy()
+    features["ball_x"][1000:2000] = 50.0  # the same walking, with the ball standing still
+    waiting = tracking_scores(features, graded, pitch)
+    assert waiting[1200:1800, 2].min() > 0.25, waiting[1200:1800, 2].min()
+    assert waiting[100:900, 2].max() <= 0.0
+
+
+def test_only_kickoffs_get_dead_evidence_from_a_set_piece():
+    throw_in = {"code": "SET PIECES", "start_frame": 100, "end_frame": 200,
+                "tags": {"Type": "Throw-in"}}
+    kickoff = {"code": "SET PIECES", "start_frame": 100, "end_frame": 200,
+               "tags": {"Type": "Kick Off (After Goal)"}}
+    assert tag_scores([throw_in], 300, BLOCKS)[:, 2].max() == 0.0
+    assert tag_scores([kickoff], 300, BLOCKS)[120, 2] > 0.0
+
+
 def test_tag_agreement_counts_the_right_team_and_the_restart():
     labels = np.array(["D"] * 100 + ["H"] * 100 + ["A"] * 100)
     events = [{"code": "BUILD UP", "start_frame": 100, "end_frame": 200,
@@ -162,6 +192,8 @@ def test_tag_agreement_counts_the_right_team_and_the_restart():
 
 
 if __name__ == '__main__':
+    test_slow_players_need_the_ball_to_agree_before_it_counts_as_dead()
+    test_only_kickoffs_get_dead_evidence_from_a_set_piece()
     test_tag_agreement_counts_the_right_team_and_the_restart()
     test_two_levels_finds_stopped_play_whatever_its_share()
     test_a_three_second_hold_changes_possession()

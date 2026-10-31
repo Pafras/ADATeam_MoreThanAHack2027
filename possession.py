@@ -50,9 +50,10 @@ WEIGHT_BALL = 0.5
 # Dead-ball evidence
 ACTIVITY_WINDOW = 50  # half-width in frames of the smoothing over mean player speed
 GAP_FULL = 10 * FPS  # a ball missing for this many frames counts as fully suspicious
+BALL_STILL = 1.0  # m/s; below this a visible ball is waiting for a restart or at someone's feet
 OUT_MARGIN = 0.5  # metres beyond the lines before a ball counts as out
-WEIGHT_ACTIVITY = 0.15
-WEIGHT_GAP = 0.15
+WEIGHT_STOPPED = 0.3  # players stopped AND the ball missing for long or standing still
+WEIGHT_LIVE = 0.15  # players moving is evidence against a stoppage
 WEIGHT_OUT = 0.5
 WEIGHT_FAST_BALL = 0.3  # a ball moving fast is a ball in play
 
@@ -191,17 +192,23 @@ def tracking_scores(features, graded, pitch):
     scores[:, A] -= team
 
     # Dead: players slowing down, relative to this match's own stopped and live levels, so that
-    # no absolute speed has to be assumed.
+    # no absolute speed has to be assumed. Slow players alone are not a stoppage, because a team
+    # walking the ball out from the back looks the same, so the ball has to agree: missing for a
+    # long time, or visible and not moving.
     activity = smooth_ignoring_nan(features["activity"], ACTIVITY_WINDOW)
     usable = graded & ~np.isnan(activity)
     if usable.any():
         low, live = two_levels(activity[usable])
         middle, scale = (low + live) / 2.0, max((live - low) / 2.0, 1e-3)
-        scores[:, D] += WEIGHT_ACTIVITY * np.clip(
-            np.nan_to_num((middle - activity) / scale), -1, 1)
+        pace = np.clip(np.nan_to_num((middle - activity) / scale), -1, 1)
 
-    gaps = missing_run_lengths(~visible)
-    scores[:, D] += WEIGHT_GAP * np.minimum(gaps / float(GAP_FULL), 1.0)
+        gaps = np.minimum(missing_run_lengths(~visible) / float(GAP_FULL), 1.0)
+        with np.errstate(invalid="ignore"):
+            still = np.where(visible, (speed < BALL_STILL).astype(float), np.nan)
+        still = np.nan_to_num(smooth_ignoring_nan(still, ACTIVITY_WINDOW))
+
+        scores[:, D] += WEIGHT_STOPPED * np.maximum(pace, 0.0) * np.maximum(gaps, still)
+        scores[:, D] -= WEIGHT_LIVE * np.maximum(-pace, 0.0)
     scores[out, D] += WEIGHT_OUT
     scores[:, D] -= WEIGHT_FAST_BALL * (np.nan_to_num(speed) > BALL_FAST)
     return scores
@@ -220,12 +227,13 @@ def tag_scores(events, n_frames, blocks):
 
         if code == "set pieces":
             # ponytail: assumes the restart sits mid-interval, which is only documented for
-            # kickoffs. Measure it across the set pieces if restart timing turns out to matter.
+            # kickoffs, so only kickoffs get dead-ball evidence from it. Measure the timing across
+            # the other set pieces if restarts turn out to matter.
             middle = (start + stop) // 2
-            scores[start:middle, D] += WEIGHT_RESTART
             if team is not None:
                 scores[middle:stop, team] += WEIGHT_RESTART
             if kind.startswith("kick off"):
+                scores[start:middle, D] += WEIGHT_RESTART
                 next_kickoffs.append(start)
             if kind == "kick off (start)":
                 for _, first, last in blocks:
