@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(ROOT, "evaluation"))
 from games import GAME, GAMES, half_video_blocks, source_frames  # noqa: E402
 from possession_metrics import label_codes, read_label_csv, spell_scores, valid_runs, \
     validate_submission  # noqa: E402
-from possession import FPS, build, tag_scores, viterbi, write_submission  # noqa: E402
+from possession import FPS, build, tag_scores, two_levels, viterbi, write_submission  # noqa: E402
 
 N_FRAMES = source_frames("tactical", GAME)
 BLOCKS = half_video_blocks(GAME)
@@ -124,7 +124,28 @@ def test_defending_tag_points_at_the_other_team():
     assert scores[15, 1] > 0 and scores[15, 0] == 0
 
 
+def test_two_levels_finds_stopped_play_whatever_its_share():
+    for stopped_share in (0.05, 0.2, 0.5):
+        n_stopped = int(10000 * stopped_share)
+        values = np.linspace(-0.1, 0.1, 10000)
+        values[:n_stopped] += 1.0
+        values[n_stopped:] += 2.5
+        low, high = two_levels(values)
+        assert abs(low - 1.0) < 0.1 and abs(high - 2.5) < 0.1, (stopped_share, low, high)
+
+
+def test_a_three_second_hold_changes_possession():
+    # The case SWITCH_TEAM is derived from: 8.5 of evidence for A across 3 s, in the middle of H.
+    scores = np.zeros((1000, 3))
+    scores[:, 0], scores[:, 1] = 0.1, -0.1
+    scores[500:575, 0], scores[500:575, 1] = -8.5 / 75, 8.5 / 75
+    path = viterbi(scores)
+    assert (path[500:575] == 1).all() and path[0] == 0 and path[-1] == 0
+
+
 if __name__ == '__main__':
+    test_two_levels_finds_stopped_play_whatever_its_share()
+    test_a_three_second_hold_changes_possession()
     test_viterbi_ignores_a_short_touch_and_keeps_a_real_change()
     test_defending_tag_points_at_the_other_team()
     test_end_to_end()

@@ -49,7 +49,6 @@ WEIGHT_BALL = 0.5
 
 # Dead-ball evidence
 ACTIVITY_WINDOW = 50  # half-width in frames of the smoothing over mean player speed
-ACTIVITY_LOW, ACTIVITY_LIVE = 10, 50  # percentiles of the match taken as stopped and as live play
 GAP_FULL = 10 * FPS  # a ball missing for this many frames counts as fully suspicious
 OUT_MARGIN = 0.5  # metres beyond the lines before a ball counts as out
 WEIGHT_ACTIVITY = 0.15
@@ -63,7 +62,10 @@ WEIGHT_RESTART = 0.3
 WEIGHT_BEFORE_KICKOFF = 5.0  # effectively certain, but still only evidence
 
 # Viterbi switch costs
-SWITCH_TEAM = 15.0
+# CHALLENGE.md names "a player keeps the ball for a few seconds" as a proxy for control. Holding it
+# for 3 s at 1.5 m, with the ball visible 60% of the time, adds up to about 8.5 of evidence, and each
+# frame moves the H-A gap by twice that. A spell needs two switches, so a cost of 8 lets it through.
+SWITCH_TEAM = 8.0
 SWITCH_DEAD = 10.0
 
 TAG_TEAMS = {"barcelona": H, "atletic club": A}
@@ -144,6 +146,27 @@ def smooth_ignoring_nan(values, window):
         return np.where(seen > 0, (total[high] - total[low]) / seen, np.nan)
 
 
+def two_levels(values):
+    """Means of the two groups that best split the values (Otsu's threshold).
+
+    The split comes from the shape of the distribution, so it assumes nothing about how large
+    either group is. A percentile would decide the share of dead ball before looking at the match.
+    """
+    # ponytail: a fixed 256-bin histogram with no check that two groups exist. Fit a mixture model
+    # if the match turns out not to separate into stopped and live play.
+    counts, edges = np.histogram(values, bins=256)
+    centres = (edges[:-1] + edges[1:]) / 2.0
+    below = np.cumsum(counts)[:-1]
+    above = counts.sum() - below
+    mass_below = np.cumsum(counts * centres)[:-1]
+    mass_above = (counts * centres).sum() - mass_below
+    with np.errstate(invalid="ignore", divide="ignore"):
+        low, high = mass_below / below, mass_above / above
+        spread = np.nan_to_num(below * above * (high - low) ** 2)
+    best = spread.argmax()
+    return low[best], high[best]
+
+
 def tracking_scores(features, graded, pitch):
     """n_frames x 3 scores for H, A and D from the tracking alone."""
     length, width = pitch
@@ -172,7 +195,7 @@ def tracking_scores(features, graded, pitch):
     activity = smooth_ignoring_nan(features["activity"], ACTIVITY_WINDOW)
     usable = graded & ~np.isnan(activity)
     if usable.any():
-        low, live = np.percentile(activity[usable], [ACTIVITY_LOW, ACTIVITY_LIVE])
+        low, live = two_levels(activity[usable])
         middle, scale = (low + live) / 2.0, max((live - low) / 2.0, 1e-3)
         scores[:, D] += WEIGHT_ACTIVITY * np.clip(
             np.nan_to_num((middle - activity) / scale), -1, 1)
