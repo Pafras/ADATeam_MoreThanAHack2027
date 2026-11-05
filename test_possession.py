@@ -23,6 +23,8 @@ from possession import FPS, WEIGHT_TOUCH, build, detect_touches, read_features, 
     tracking_scores, two_levels, viterbi, write_submission  # noqa: E402
 from validate_tags import handover_recall, phase_agreement, restart_agreement  # noqa: E402
 from diagnose_hidden import balanced_agreement  # noqa: E402
+from compare_versions import verdict  # noqa: E402
+from external_touches import event_touches  # noqa: E402
 
 N_FRAMES = source_frames("tactical", GAME)
 BLOCKS = half_video_blocks(GAME)
@@ -196,6 +198,29 @@ def test_handover_recall_needs_the_change_to_go_to_the_right_team():
     assert handover_recall(labels, far) == 0.0
 
 
+def test_verdict_needs_every_criterion():
+    old = {"poss": 172, "dead": 0.446, "rs_recall": 0.79, "rs_team": 0.84, "ho_recall": 0.62}
+    good = {"poss": 216, "dead": 0.44, "rs_recall": 0.79, "rs_team": 0.84, "ho_recall": 0.70}
+    assert all(passed for passed, _ in verdict(1400, old, good))
+    assert not verdict(5000, old, good)[0][0]
+    assert not all(passed for passed, _ in verdict(1400, old, dict(good, ho_recall=0.63)))
+    assert not all(passed for passed, _ in verdict(1400, old, dict(good, dead=0.50)))
+
+
+def test_event_touches_reads_kicks_and_receptions_and_drops_duplicates():
+    with tempfile.TemporaryDirectory() as folder:
+        path = os.path.join(folder, "events.csv")
+        with open(path, "w") as handle:
+            handle.write("Team,Type,Subtype,Period,Start Frame,Start Time [s],End Frame,"
+                         "End Time [s],From,To,Start X,Start Y,End X,End Y\n"
+                         "Away,SET PIECE,KICK OFF,1,1,0.04,0,0,P19,,,,,\n"
+                         "Away,PASS,,1,1,0.04,40,1.6,P19,P21,,,,\n"
+                         "Home,CHALLENGE,GROUND,1,60,2.4,60,2.4,P2,,,,,\n"
+                         "Home,BALL LOST,,1,80,3.2,90,3.6,P2,,,,,\n")
+        frames, teams = event_touches(path)
+    assert list(frames) == [0, 39, 79] and list(teams) == [1, 1, 0], (frames, teams)
+
+
 def test_balanced_agreement_does_not_reward_always_saying_home():
     reference = np.array([1.0] * 90 + [-1.0] * 10)
     mask = np.ones(100, dtype=bool)
@@ -263,6 +288,8 @@ def test_tag_agreement_counts_the_right_team_and_the_restart():
 
 
 if __name__ == '__main__':
+    test_verdict_needs_every_criterion()
+    test_event_touches_reads_kicks_and_receptions_and_drops_duplicates()
     test_balanced_agreement_does_not_reward_always_saying_home()
     test_read_features_gives_each_team_its_shape_in_metres()
     test_a_touch_is_a_sharp_change_next_to_a_clearly_nearer_team()

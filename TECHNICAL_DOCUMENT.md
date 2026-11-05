@@ -29,7 +29,7 @@ frames, because the Viterbi path already holds the last team through a gap.
 |---|---|
 | Ball visible and slow | The team with the nearer player gains evidence, more so the closer that player is |
 | Ball in flight, above 10 m/s | Proximity evidence is reduced, because the nearest player is not controlling it |
-| Touch | A sharp change in ball velocity within 4 m of a player, with one team at least 1 m nearer |
+| Touch | A change in ball velocity of at least 1 m/s over 2 frames within 4 m of a player, with one team at least 1 m nearer |
 | Change of possession | Takes about three touches in a row, following the "more than two consecutive passes" proxy in `CHALLENGE.md` |
 | One or two touches, deflections | Do not pay the switch cost, so possession stays with the same team |
 | Loose or missing ball | No evidence for either team, so possession stays with the last team, as `CHALLENGE.md` states |
@@ -44,6 +44,9 @@ frames, because the Viterbi path already holds the last team through a gap.
 **Used**
 
 - **Tactical tracking (ATD).** The main input.
+- **Metrica Sports public sample data, Sample Games 1 and 2**
+  (https://github.com/metrica-sports/sample-data, pinned commit `e706dd5`). External data, used only
+  to tune the touch thresholds; see below. The repository asks for responsible use and attribution.
 - **Smart Tagging.** Weak evidence: phase tags point at a team, set pieces at the team restarting,
   and kickoffs and goals at stoppages. It is treated as evidence and never copied across as labels.
   We also use it as a reference to compare versions.
@@ -57,6 +60,10 @@ frames, because the Viterbi path already holds the last team through a gap.
 
 **Tried and dropped**
 
+- **Touch thresholds from this match's tracking.** Our first touch detector took its thresholds from
+  the ball velocity distributions of this match (`diagnose_touches.py`). The organizers clarified
+  that tuned parameters must be tuned on external data, so we replaced them with thresholds tuned on
+  Metrica's sample games.
 - **Dead-ball evidence from every set piece.** It assumes the restart sits mid-interval, which is
   documented only for kickoffs. It is now used for kickoffs only.
 - **Marking down the other team from phase tags.** Two variants were tried so that phases would not
@@ -77,10 +84,18 @@ The public five minutes were not used as training data. Weights come from three 
 
 - **The challenge's definitions.** `SWITCH_TEAM` and `WEIGHT_TOUCH` are derived from the control
   proxies in `CHALLENGE.md`: holding the ball for a few seconds, and more than two consecutive passes.
-- **Tracking distributions, with no labels.** The activity threshold uses Otsu's method. The touch
-  thresholds come from the velocity distributions in `diagnose_touches.py`, which showed that the
-  ball track is smooth, so a kick is spread over several frames.
+- **Tracking distributions, with no labels.** The activity threshold uses Otsu's method, computed
+  from the data with no tuned parameter.
+- **External data.** `external_touches.py` picks `TOUCH_LAG`, `TOUCH_CHANGE` and `TOUCH_RANGE` by
+  grid search against the event touches (passes, receptions, recoveries, shots, ball losses, set
+  pieces) of Metrica's Sample Games 1 and 2. The matching rule was fixed before the search: same
+  team within 10 frames. The chosen setting scores F1 0.90 on each game, and choosing on one game
+  and scoring on the other gives the same setting. Nothing from this match went into the choice.
 - **Football reasoning.** The remaining weights are set by judgement and were not fitted.
+
+Whether touches are used at all was decided by `compare_versions.py`, with criteria written before
+it ran: touches had to find more tagged changes of possession without breaking the dead-ball share,
+restarts or the number of possessions. They passed every criterion.
 
 To compare versions we wrote acceptance criteria before running each one, and measured against
 Smart Tagging over the full match (`validate_tags.py`). Smart Tagging is inferred from the same
@@ -103,8 +118,7 @@ one possession moves `spellF1` by about six points here.
 | `baseline_smooth125` | 0.5812 | 0.4242 | 16 | 18.5 s |
 | `baseline_smooth50` | 0.6207 | 0.3256 | 26 | 10.8 s |
 
-Over the full match our pipeline reports 216 possessions with a mean of 16.5 s, and 43.9% of graded
-frames as dead ball. We have no full-match score, because that ground truth is private.
+Over the full match our pipeline reports 218 possessions, and 44.0% of graded frames as dead ball. We have no full-match score, because that ground truth is private.
 
 ## Limitations
 
@@ -112,15 +126,15 @@ frames as dead ball. We have no full-match score, because that ground truth is p
   labels' accuracy. Our weights may not be the best ones.
 - **Possessions are still merged.** We find 13 of the 17 in the public window, with too long a mean
   duration. Possessions of about a second are likely to be missed by design.
-- **Touches can name the wrong team.** Adding them found more changes of possession, but lowered
-  agreement with phase tags on tracking alone (0.782 to 0.756). The nearest player at a touch is not
-  always the team that gains the ball.
+- **Touches can name the wrong team.** The nearest player at a touch is not always the team that
+  gains the ball.
+- **Touch thresholds come from other games.** Metrica's sample games are tracked differently from
+  this match, so the thresholds may not be the best ones here. We did not adjust them to this match.
 - **The ball is missing on about 41% of graded frames.** There the label only carries the last team
   forward, or moves to dead ball if the players have also stopped. We lack a signal that reliably
   finds a change of possession during those frames.
 - **Restart timing.** After a set piece, team evidence starts mid-interval, an assumption documented
   only for kickoffs.
-- **One match.** Thresholds drawn from this match's distributions may not transfer to another.
 
 With more time we would separate a kick from a reception, so that a touch names the team gaining
 control, and train on labelled data from other matches.

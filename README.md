@@ -50,7 +50,9 @@ Validate it and score it on the public five minutes:
 | `possession.py` | the pipeline; writes the submission |
 | `test_possession.py` | checks on a synthetic match; needs no data |
 | `validate_tags.py` | compares settings over the full match against Smart Tagging |
-| `diagnose_touches.py` | the tracking distributions behind the touch thresholds |
+| `external_touches.py` | tunes the touch thresholds on Metrica's public sample games (external data) |
+| `compare_versions.py` | checks, against Smart Tagging, whether touches improve on the version without them |
+| `diagnose_touches.py` | the match's ball velocity distributions; no longer used to set thresholds |
 | `diagnose_hidden.py` | measures team shape signals for frames with no ball |
 | `requirements-lock.txt` | the exact dependency versions |
 

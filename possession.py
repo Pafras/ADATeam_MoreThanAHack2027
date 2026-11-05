@@ -48,13 +48,12 @@ NO_PLAYER_DISTANCE = 100.0  # metres, standing in for a team with no tracked pla
 WEIGHT_BALL = 0.5
 
 # Touches: the ball's velocity changes sharply next to a player
-# The ball track is smooth, so a kick is spread over several frames: over 3 frames the velocity
-# change only reaches 4.2 m/s at its 99th percentile, over 8 frames 10.8 m/s. These come from that
-# distribution in the tracking (diagnose_touches.py), not from any labels, and give about 1400
-# touches on the 59% of frames with a ball, in line with a match's passes and receptions.
-TOUCH_LAG = 8  # frames either side of the touch that each velocity is measured over
-TOUCH_CHANGE = 4.0  # m/s of velocity change; below this it could be tracker jitter
-TOUCH_RANGE = 4.0  # metres from the ball to the nearest player, allowing for the smoothing
+# Tuned on external data only, as the competition rules require: external_touches.py picks the
+# values that best match the event touches of Metrica's public Sample Games 1 and 2 (F1 0.90 on
+# each). Nothing from the competition match went into them.
+TOUCH_LAG = 2  # frames either side of the touch that each velocity is measured over
+TOUCH_CHANGE = 1.0  # m/s of velocity change
+TOUCH_RANGE = 4.0  # metres from the ball to the nearest player
 TOUCH_MARGIN = 1.0  # metres; a closer call than this between the teams names nobody
 TOUCH_GAP = 10  # frames; changes closer together than this are one touch
 # CHALLENGE.md names "a team completes more than two consecutive passes" as a proxy for control.

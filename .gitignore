@@ -62,3 +62,7 @@ __pycache__/
 venv/
 env/
 .DS_Store
+
+# -- external data -------------------------------------------------------------------------------
+# Metrica public sample games, downloaded by external_touches.py. Not ours to redistribute.
+external/
