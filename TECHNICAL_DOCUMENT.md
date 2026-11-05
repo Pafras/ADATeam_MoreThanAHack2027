@@ -46,7 +46,8 @@ frames, because the Viterbi path already holds the last team through a gap.
 - **Tactical tracking (ATD).** The main input.
 - **Metrica Sports public sample data, Sample Games 1 and 2**
   (https://github.com/metrica-sports/sample-data, pinned commit `e706dd5`). External data, used only
-  to tune the touch thresholds; see below. The repository asks for responsible use and attribution.
+  to tune the touch thresholds; see below. It is published by Metrica Sports, one of the organizers
+  of this challenge. The repository asks for responsible use and attribution.
 - **Smart Tagging.** Weak evidence: phase tags point at a team, set pieces at the team restarting,
   and kickoffs and goals at stoppages. It is treated as evidence and never copied across as labels.
   We also use it as a reference to compare versions.
@@ -80,10 +81,12 @@ None. The pipeline trains no model and uses no labelled data from this match or 
 
 ## Choosing weights without labels
 
-The public five minutes were not used as training data. Weights come from three sources:
+The public five minutes were not used as training data. Weights come from four sources:
 
 - **The challenge's definitions.** `SWITCH_TEAM` and `WEIGHT_TOUCH` are derived from the control
   proxies in `CHALLENGE.md`: holding the ball for a few seconds, and more than two consecutive passes.
+  `SWITCH_TEAM` was lowered once, from 15 to 8, after our first version merged too many possessions.
+  The new value is derived from that proxy, as the code shows, and was not searched.
 - **Tracking distributions, with no labels.** The activity threshold uses Otsu's method, computed
   from the data with no tuned parameter.
 - **External data.** `external_touches.py` picks `TOUCH_LAG`, `TOUCH_CHANGE` and `TOUCH_RANGE` by
