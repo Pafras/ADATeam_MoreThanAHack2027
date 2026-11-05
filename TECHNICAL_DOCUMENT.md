@@ -114,7 +114,7 @@ one possession moves `spellF1` by about six points here.
 
 | Submission | `macroF1` | `spellF1` | Possessions | Mean duration |
 |---|---|---|---|---|
-| Ours | 0.6579 | 0.4667 | 13 | 21.9 s |
+| Ours | 0.6527 | 0.4000 | 15 | 19.0 s |
 | `baseline_smooth125` | 0.5812 | 0.4242 | 16 | 18.5 s |
 | `baseline_smooth50` | 0.6207 | 0.3256 | 26 | 10.8 s |
 
@@ -124,7 +124,7 @@ Over the full match our pipeline reports 218 possessions, and 44.0% of graded fr
 
 - **Not validated on the full match.** Apart from the five public minutes, we have no measure of the
   labels' accuracy. Our weights may not be the best ones.
-- **Possessions are still merged.** We find 13 of the 17 in the public window, with too long a mean
+- **Possessions are still merged.** We find 15 of the 17 in the public window, with too long a mean
   duration. Possessions of about a second are likely to be missed by design.
 - **Touches can name the wrong team.** The nearest player at a touch is not always the team that
   gains the ball.
