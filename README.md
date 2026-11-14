@@ -32,16 +32,16 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements-lock.txt
 ```
 
-Regenerate the submission, replacing `<team_name>` with the team's registered name:
+Regenerate the submission:
 
 ```bash
-.venv/bin/python possession.py --out evaluation/results/<team_name>.csv
+.venv/bin/python possession.py --out "evaluation/results/ADA Team.csv"
 ```
 
 Validate it and score it on the public five minutes:
 
 ```bash
-.venv/bin/python evaluation/validate_submission.py evaluation/results/<team_name>.csv
+.venv/bin/python evaluation/validate_submission.py "evaluation/results/ADA Team.csv"
 .venv/bin/python evaluation/run_evaluation.py
 ```
 
