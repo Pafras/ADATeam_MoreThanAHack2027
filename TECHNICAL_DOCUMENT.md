@@ -77,7 +77,15 @@ frames, because the Viterbi path already holds the last team through a gap.
 
 ## Training data
 
-None. The pipeline trains no model and uses no labelled data from this match or any other.
+The pipeline trains no model, and uses no labelled data from this match.
+
+One labelled dataset from other games is used, to tune the three touch thresholds:
+
+| Dataset | Source | Labelled by | Amount |
+|---|---|---|---|
+| Event data of Metrica Sample Games 1 and 2 | https://github.com/metrica-sports/sample-data, commit `e706dd5` | Metrica Sports; its README does not say how the events were produced | 1,894 and 2,087 touches (passes, receptions, recoveries, shots, ball losses, set pieces) |
+
+We did not label anything ourselves.
 
 ## Choosing weights without labels
 
