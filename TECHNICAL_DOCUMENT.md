@@ -152,9 +152,26 @@ control, and train on labelled data from other matches.
 
 ## Use of LLMs
 
-We used Claude (Anthropic) to help write code and documentation. The pipeline itself makes no LLM
-calls. No video, tracking, tagging or homography files were uploaded to it. It saw aggregate output
-of our scripts, such as label counts, distribution percentiles and scores.
+We used Claude (Anthropic), through Claude Code, as a coding assistant. The pipeline itself makes no
+LLM calls. We used it to:
+
+- **Understand the task.** Read the challenge repository (`CHALLENGE.md`, `EVALUATION.md`,
+  `RULES.md`, `SUBMISSION.md`) and the organizers' emails, and draft our questions to the
+  organizers.
+- **Design the method.** Propose the rule-based pipeline with Viterbi smoothing, the touch detector
+  and the checks against Smart Tagging.
+- **Write the code.** Most of `possession.py`, `validate_tags.py`, `compare_versions.py`,
+  `external_touches.py`, the diagnostic scripts and `test_possession.py`.
+- **Test it.** Run the tests on a synthetic match, and run `external_touches.py` on Metrica's sample
+  games.
+- **Check reproduction.** Clone the public repository and regenerate the submission on our machine,
+  with the pipeline's output hidden and only the byte comparison shown.
+- **Write the documents.** Draft the README and this document, and write the commit messages.
+
+The team ran the scripts on the match data, reviewed and approved each change, and chose the
+version to submit. No video, tracking, tagging or homography files were uploaded to the assistant.
+It did see aggregate output of our scripts, which we pasted in, such as label counts, distribution
+percentiles and scores.
 
 ## Reproduction
 
